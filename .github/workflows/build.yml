@@ -25,8 +25,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 1. Force runner to strictly use .NET 8 SDK via global.json
-      - name: Create global.json (Pin SDK)
+      - name: Pin .NET SDK to 8.0
         run: |
           cat << 'EOF' > global.json
           {
@@ -46,9 +45,9 @@ jobs:
         run: |
           dotnet workload install android --source https://api.nuget.org/v3/index.json
 
-      - name: Auto-Generate Project Structure
+      - name: Auto-Generate Project Structure & Fix Paths
         run: |
-          # 1. C# Project targeting net8.0-android
+          # 1. Project file explicitly referencing AndroidManifest.xml
           cat << 'EOF' > GfxTool.csproj
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
@@ -60,6 +59,7 @@ jobs:
               <ApplicationId>com.kuronami.gfxtool</ApplicationId>
               <ApplicationVersion>1</ApplicationVersion>
               <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+              <AndroidManifest>AndroidManifest.xml</AndroidManifest>
               <CheckEolWorkloads>false</CheckEolWorkloads>
               <CheckEolTargetFramework>false</CheckEolTargetFramework>
             </PropertyGroup>
@@ -69,10 +69,8 @@ jobs:
           </Project>
           EOF
 
-          # 2. Android Manifest with Permissions
-          mkdir -p Platforms/Android
-          cat << 'EOF' > Platforms/Android/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
+          # 2. Manifest content with Shizuku & Full Storage declarations
+          MANIFEST_CONTENT='<?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.kuronami.gfxtool">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -81,8 +79,14 @@ jobs:
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
               <application android:allowBackup="true" android:label="Kuronami GFX" android:supportsRtl="true">
               </application>
-          </manifest>
-          EOF
+          </manifest>'
+
+          # Place manifest at root AND Properties folder (guarantees MSBuild finds it)
+          echo "$MANIFEST_CONTENT" > AndroidManifest.xml
+          mkdir -p Properties
+          echo "$MANIFEST_CONTENT" > Properties/AndroidManifest.xml
+          mkdir -p Platforms/Android
+          echo "$MANIFEST_CONTENT" > Platforms/Android/AndroidManifest.xml
 
           # 3. Model Definition
           cat << 'EOF' > ConfigItem.cs
@@ -111,7 +115,7 @@ jobs:
           }
           EOF
 
-          # 4. Shizuku Shell Execution
+          # 4. Privileged Shizuku Command Execution
           cat << 'EOF' > ShizukuService.cs
           using System;
           using System.Diagnostics;
@@ -151,7 +155,7 @@ jobs:
           }
           EOF
 
-          # 5. UI Activity
+          # 5. UI Activity with Download to Apply State Switch
           cat << 'EOF' > MainActivity.cs
           using System;
           using System.IO;
@@ -262,10 +266,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff-index --quiet HEAD; then
-            git commit -m "Configure stable SDK pin and project scaffolding"
+            git commit -m "Auto-fix manifest locations and build structure"
             git push origin HEAD
           else
-            echo "No changes to commit"
+            echo "Working directory clean."
           fi
 
       - name: Build Android APK
