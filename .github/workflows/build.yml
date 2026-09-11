@@ -1,0 +1,53 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK (Temurin 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup .NET SDK 8.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install .NET MAUI Android Workload
+        run: |
+          dotnet workload install maui-android --source https://api.nuget.org/v3/index.json
+
+      - name: Restore NuGet Dependencies
+        run: |
+          dotnet restore
+
+      - name: Build and Package Android APK (Release)
+        run: |
+          dotnet publish -f net8.0-android -c Release -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false
+
+      - name: Locate Generated APK
+        id: find-apk
+        run: |
+          APK_PATH=$(find . -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
+          echo "Found APK at: $APK_PATH"
+          echo "apk_path=$APK_PATH" >> $GITHUB_ENV
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GFX-Tool-Release-APK
+          path: ${{ env.apk_path }}
+          retention-days: 7
