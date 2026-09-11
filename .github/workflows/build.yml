@@ -25,10 +25,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup .NET SDK
+      - name: Setup .NET SDK 9.0
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
       - name: Install Android Workload
         run: |
@@ -36,11 +36,11 @@ jobs:
 
       - name: Auto-Generate Project Structure & Shizuku Config
         run: |
-          # 1. Generate clean .csproj with EOL bypass flags
+          # 1. Project file with exact target framework and bypasses
           cat << 'EOF' > GfxTool.csproj
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
-              <TargetFramework>net8.0-android</TargetFramework>
+              <TargetFramework>net9.0-android</TargetFramework>
               <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
               <OutputType>Exe</OutputType>
               <Nullable>enable</Nullable>
@@ -48,18 +48,17 @@ jobs:
               <ApplicationId>com.kuronami.gfxtool</ApplicationId>
               <ApplicationVersion>1</ApplicationVersion>
               <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-              <!-- Bypass EOL TargetFramework Errors -->
+              <CheckEolWorkloads>false</CheckEolWorkloads>
               <CheckEolTargetFramework>false</CheckEolTargetFramework>
-              <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
-              <WarningLevel>0</WarningLevel>
+              <NoWarn>$(NoWarn);NETSDK1202;NETSDK1138</NoWarn>
             </PropertyGroup>
             <ItemGroup>
-              <PackageReference Include="System.Text.Json" Version="8.0.5" />
+              <PackageReference Include="System.Text.Json" Version="9.0.0" />
             </ItemGroup>
           </Project>
           EOF
 
-          # 2. Manifest with Shizuku and Storage Permissions
+          # 2. Android Manifest with Shizuku & Full Storage declarations
           mkdir -p Platforms/Android
           cat << 'EOF' > Platforms/Android/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -101,7 +100,7 @@ jobs:
           }
           EOF
 
-          # 4. Shizuku privileged injector
+          # 4. Privileged Shizuku Command Execution
           cat << 'EOF' > ShizukuService.cs
           using System;
           using System.Diagnostics;
@@ -141,7 +140,7 @@ jobs:
           }
           EOF
 
-          # 5. Native Android Activity UI with dynamic Download -> Apply button
+          # 5. Native Android UI with Dynamic State Switch
           cat << 'EOF' > MainActivity.cs
           using System;
           using System.IO;
@@ -255,21 +254,21 @@ jobs:
             git commit -m "Auto-scaffold project sources with Shizuku integration"
             git push origin HEAD
           else
-            echo "Working directory clean, no new files to commit."
+            echo "No changes to commit"
           fi
 
       - name: Restore Dependencies
         run: |
-          dotnet restore GfxTool.csproj -p:CheckEolTargetFramework=false
+          dotnet restore GfxTool.csproj -p:CheckEolWorkloads=false -p:CheckEolTargetFramework=false
 
       - name: Build Android APK
         run: |
-          dotnet build GfxTool.csproj -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false -p:CheckEolTargetFramework=false
+          dotnet build GfxTool.csproj -c Release -f net9.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false -p:CheckEolWorkloads=false -p:CheckEolTargetFramework=false
 
       - name: Locate Output APK
         id: find-apk
         run: |
-          APK_FILE=$(find bin/Release/net8.0-android -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
+          APK_FILE=$(find bin/Release -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
           if [ -z "$APK_FILE" ]; then
             APK_FILE=$(find . -type f -name "*.apk" | head -n 1)
           fi
