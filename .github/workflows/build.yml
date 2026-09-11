@@ -1,19 +1,23 @@
-name: Build Android APK
+name: Setup Project, Push Source and Build APK
 
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-apk:
+  scaffold-and-build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Java JDK (Temurin 17)
         uses: actions/setup-java@v4
@@ -26,28 +30,262 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install .NET MAUI Android Workload
+      - name: Install Android Workload
         run: |
-          dotnet workload install maui-android --source https://api.nuget.org/v3/index.json
+          dotnet workload install android --source https://api.nuget.org/v3/index.json
 
-      - name: Restore NuGet Dependencies
+      - name: Generate Complete C# Project & Manifest (If Not Present)
+        run: |
+          if [ ! -f "*.csproj" ] && [ ! -f "*/*.csproj" ]; then
+            echo "Project not found. Creating complete C# Shizuku GFX Tool project..."
+
+            # 1. Create .csproj
+            cat << 'EOF' > GfxTool.csproj
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0-android</TargetFramework>
+              <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
+              <OutputType>Exe</OutputType>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <ApplicationId>com.kuronami.gfxtool</ApplicationId>
+              <ApplicationVersion>1</ApplicationVersion>
+              <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="System.Text.Json" Version="8.0.5" />
+            </ItemGroup>
+          </Project>
+          EOF
+
+            # 2. Create AndroidManifest with Shizuku & Storage Permissions
+            mkdir -p Platforms/Android
+            cat << 'EOF' > Platforms/Android/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.kuronami.gfxtool">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+              <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:label="Kuronami GFX" android:supportsRtl="true">
+              </application>
+          </manifest>
+          EOF
+
+            # 3. Create Resources
+            mkdir -p Platforms/Android/Resources/values
+            cat << 'EOF' > Platforms/Android/Resources/values/strings.xml
+          <resources>
+              <string name="app_name">Kuronami GFX</string>
+          </resources>
+          EOF
+
+            mkdir -p Platforms/Android/Resources/mipmap-anydpi-v26
+            mkdir -p Platforms/Android/Resources/values
+            cat << 'EOF' > Platforms/Android/Resources/values/colors.xml
+          <resources>
+              <color name="colorPrimary">#0D1117</color>
+          </resources>
+          EOF
+
+            # 4. Create Models & Logic
+            cat << 'EOF' > ConfigItem.cs
+          using System.Text.Json.Serialization;
+
+          namespace KuronamiGfx;
+
+          public class ConfigItem
+          {
+              [JsonPropertyName("id")]
+              public string Id { get; set; } = string.Empty;
+
+              [JsonPropertyName("title")]
+              public string Title { get; set; } = string.Empty;
+
+              [JsonPropertyName("file_url")]
+              public string FileUrl { get; set; } = string.Empty;
+
+              [JsonPropertyName("file_name")]
+              public string FileName { get; set; } = string.Empty;
+
+              [JsonPropertyName("target_subpath")]
+              public string TargetSubpath { get; set; } = string.Empty;
+
+              public bool IsDownloaded { get; set; }
+          }
+          EOF
+
+            cat << 'EOF' > ShizukuService.cs
+          using System.Diagnostics;
+
+          namespace KuronamiGfx;
+
+          public static class ShizukuService
+          {
+              public static void ExecuteShizuku(string command)
+              {
+                  try
+                  {
+                      var proc = new Process
+                      {
+                          StartInfo = new ProcessStartInfo
+                          {
+                              FileName = "/system/bin/sh",
+                              Arguments = $"-c \"/data/local/tmp/rish -c '{command}'\"",
+                              UseShellExecute = false,
+                              RedirectStandardOutput = true
+                          }
+                      };
+                      proc.Start();
+                      proc.WaitForExit();
+                  }
+                  catch { }
+              }
+
+              public static void ApplyConfig(string localPath, string packageName, string targetSubpath, string fileName)
+              {
+                  string destDir = $"/sdcard/Android/data/{packageName}/{targetSubpath}";
+                  string destFile = $"{destDir}/{fileName}";
+                  ExecuteShizuku($"mkdir -p '{destDir}'");
+                  ExecuteShizuku($"cp '{localPath}' '{destFile}'");
+                  ExecuteShizuku($"chmod 660 '{destFile}'");
+              }
+          }
+          EOF
+
+            # 5. Create MainActivity
+            cat << 'EOF' > MainActivity.cs
+          using Android.App;
+          using Android.OS;
+          using Android.Widget;
+          using Android.Views;
+          using Android.Graphics;
+          using System.IO;
+          using System.Net.Http;
+          using System.Text.Json;
+
+          namespace KuronamiGfx;
+
+          [Activity(Label = "Kuronami GFX", MainLauncher = true)]
+          public class MainActivity : Activity
+          {
+              private LinearLayout? _container;
+              private readonly HttpClient _http = new();
+
+              protected override void OnCreate(Bundle? savedInstanceState)
+              {
+                  base.OnCreate(savedInstanceState);
+
+                  var scroll = new ScrollView(this);
+                  _container = new LinearLayout(this)
+                  {
+                      Orientation = Orientation.Vertical
+                  };
+                  _container.SetPadding(40, 60, 40, 60);
+                  _container.SetBackgroundColor(Color.ParseColor("#090D16"));
+                  scroll.AddView(_container);
+                  SetContentView(scroll);
+
+                  var title = new TextView(this)
+                  {
+                      Text = "KURONAMI GFX",
+                      TextSize = 24,
+                      Typeface = Typeface.DefaultBold
+                  };
+                  title.SetTextColor(Color.ParseColor("#00E5FF"));
+                  _container.AddView(title);
+
+                  LoadData();
+              }
+
+              private async void LoadData()
+              {
+                  try
+                  {
+                      // Example demo data loader
+                      var demoItem = new ConfigItem
+                      {
+                          Id = "1",
+                          Title = "BGMI Smooth 90 FPS",
+                          FileName = "Active.sav",
+                          TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
+                          FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
+                      };
+                      RenderCard(demoItem);
+                  }
+                  catch { }
+              }
+
+              private void RenderCard(ConfigItem item)
+              {
+                  var card = new LinearLayout(this) { Orientation = Orientation.Vertical };
+                  card.SetBackgroundColor(Color.ParseColor("#161B22"));
+                  card.SetPadding(30, 30, 30, 30);
+
+                  var label = new TextView(this) { Text = item.Title, TextSize = 16 };
+                  label.SetTextColor(Color.White);
+                  card.AddView(label);
+
+                  var btn = new Button(this) { Text = "DOWNLOAD" };
+                  btn.SetBackgroundColor(Color.ParseColor("#007ACC"));
+                  btn.SetTextColor(Color.White);
+
+                  btn.Click += async (s, e) =>
+                  {
+                      string localPath = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal), item.FileName);
+                      if (!item.IsDownloaded)
+                      {
+                          btn.Text = "DOWNLOADING...";
+                          btn.Enabled = false;
+                          var data = await _http.GetByteArrayAsync(item.FileUrl);
+                          await File.WriteAllBytesAsync(localPath, data);
+                          item.IsDownloaded = true;
+                          btn.Text = "APPLY";
+                          btn.SetBackgroundColor(Color.ParseColor("#10B981"));
+                          btn.Enabled = true;
+                      }
+                      else
+                      {
+                          btn.Text = "APPLYING...";
+                          btn.Enabled = false;
+                          ShizukuService.ApplyConfig(localPath, "com.pubg.imobile", item.TargetSubpath, item.FileName);
+                          btn.Text = "APPLIED";
+                      }
+                  };
+
+                  card.AddView(btn);
+                  _container?.AddView(card);
+              }
+          }
+          EOF
+
+            # 6. Commit & Push back to repository
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .
+            git commit -m "Auto-generate full C# Android Shizuku project"
+            git push origin HEAD
+          fi
+
+      - name: Restore Dependencies
         run: |
           dotnet restore
 
-      - name: Build and Package Android APK (Release)
+      - name: Build Android APK
         run: |
-          dotnet publish -f net8.0-android -c Release -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false
+          dotnet build -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false
 
-      - name: Locate Generated APK
+      - name: Locate APK
         id: find-apk
         run: |
-          APK_PATH=$(find . -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
-          echo "Found APK at: $APK_PATH"
-          echo "apk_path=$APK_PATH" >> $GITHUB_ENV
+          APK_FILE=$(find . -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
+          echo "Found APK: $APK_FILE"
+          echo "apk_path=$APK_FILE" >> $GITHUB_ENV
 
-      - name: Upload APK as Workflow Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GFX-Tool-Release-APK
+          name: Kuronami-GFX-APK
           path: ${{ env.apk_path }}
           retention-days: 7
