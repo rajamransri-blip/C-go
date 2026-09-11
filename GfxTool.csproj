@@ -8,6 +8,7 @@
     <ApplicationId>com.kuronami.gfxtool</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <AndroidManifest>AndroidManifest.xml</AndroidManifest>
     <CheckEolWorkloads>false</CheckEolWorkloads>
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
   </PropertyGroup>
