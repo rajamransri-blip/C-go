@@ -16,10 +16,15 @@ namespace KuronamiGfx;
 public class MainActivity : Activity
 {
     private LinearLayout? _cardsContainer;
+    private FrameLayout? _screensHost;
+    private View? _filesView;
+    private View? _homeView;
+    private View? _editorView;
+    private View? _settingsView;
     private readonly HttpClient _http = new();
-    private const string PackageName = "com.pubg.imobile";
+    private const string TargetGamePackage = "com.pubg.imobile";
 
-    // Remote raw JSON link (Can be replaced with your own raw github link)
+    // Can be set to your raw JSON URL
     private const string RawJsonUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md";
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -29,45 +34,94 @@ public class MainActivity : Activity
         var rootLayout = new RelativeLayout(this);
         rootLayout.SetBackgroundColor(Color.ParseColor("#060A10"));
 
-        var scrollView = new ScrollView(this);
-        scrollView.LayoutParameters = new RelativeLayout.LayoutParams(
+        // Screen container host
+        _screensHost = new FrameLayout(this);
+        var hostParams = new RelativeLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent,
             ViewGroup.LayoutParams.MatchParent);
+        hostParams.SetMargins(0, 0, 0, dp(80)); // Bottom navigation gap
+        _screensHost.LayoutParameters = hostParams;
 
+        // Build all screens
+        _filesView = CreateFilesScreen();
+        _homeView = CreateGenericScreen("DASHBOARD", "System Optimizer & Status", "Device: Android Standard\nShizuku Status: Ready\nGame Detected: BGMI [IN]");
+        _editorView = CreateGenericScreen("INI EDITOR", "Custom Configuration Editor", "Direct UserCustom.ini & Active.sav Parameter Tuning is Enabled.");
+        _settingsView = CreateGenericScreen("SETTINGS", "Application Preferences", "Auto-Backup configs: ON\nClean Cache on Apply: ON\nTarget Directory: /Android/data/");
+
+        _screensHost.AddView(_filesView);
+        _screensHost.AddView(_homeView);
+        _screensHost.AddView(_editorView);
+        _screensHost.AddView(_settingsView);
+
+        SwitchScreen(1); // Default to Files screen
+
+        rootLayout.AddView(_screensHost);
+        rootLayout.AddView(CreateBottomNav());
+
+        SetContentView(rootLayout);
+        LoadConfigs();
+    }
+
+    private void SwitchScreen(int index)
+    {
+        if (_homeView != null) _homeView.Visibility = index == 0 ? ViewStates.Visible : ViewStates.Gone;
+        if (_filesView != null) _filesView.Visibility = index == 1 ? ViewStates.Visible : ViewStates.Gone;
+        if (_editorView != null) _editorView.Visibility = index == 2 ? ViewStates.Visible : ViewStates.Gone;
+        if (_settingsView != null) _settingsView.Visibility = index == 3 ? ViewStates.Visible : ViewStates.Gone;
+    }
+
+    private View CreateFilesScreen()
+    {
+        var scrollView = new ScrollView(this);
         var mainVertical = new LinearLayout(this)
         {
             Orientation = Orientation.Vertical
         };
-        mainVertical.SetPadding(dp(18), dp(36), dp(18), dp(100)); // space for bottom bar
+        mainVertical.SetPadding(dp(18), dp(36), dp(18), dp(20));
 
-        // --- 1. HEADER SECTION ---
         mainVertical.AddView(CreateHeaderView());
-
-        // --- 2. FILES TITLE & BADGE ---
         mainVertical.AddView(CreateFilesHeader());
-
-        // --- 3. TARGET GAME SELECTOR ---
         mainVertical.AddView(CreateTargetSelector());
-
-        // --- 4. SEARCH BAR ---
         mainVertical.AddView(CreateSearchBar());
 
-        // --- 5. DYNAMIC CARDS CONTAINER ---
         _cardsContainer = new LinearLayout(this)
         {
             Orientation = Orientation.Vertical
         };
         mainVertical.AddView(_cardsContainer);
-
         scrollView.AddView(mainVertical);
-        rootLayout.AddView(scrollView);
+        return scrollView;
+    }
 
-        // --- 6. FLOATING BOTTOM NAV PILL ---
-        rootLayout.AddView(CreateBottomNav());
+    private View CreateGenericScreen(string title, string subtitle, string details)
+    {
+        var layout = new LinearLayout(this)
+        {
+            Orientation = Orientation.Vertical
+        };
+        layout.SetPadding(dp(24), dp(48), dp(24), dp(24));
 
-        SetContentView(rootLayout);
+        var t1 = new TextView(this) { Text = title, TextSize = 22, Typeface = Typeface.DefaultBold };
+        t1.SetTextColor(Color.White);
 
-        LoadConfigs();
+        var t2 = new TextView(this) { Text = subtitle, TextSize = 13 };
+        t2.SetTextColor(Color.ParseColor("#38BDF8"));
+
+        var box = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        box.Background = CreateRoundedDrawable("#0F172A", dp(14), "#1E293B", 2);
+        box.SetPadding(dp(16), dp(16), dp(16), dp(16));
+        var p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
+        p.SetMargins(0, dp(24), 0, 0);
+        box.LayoutParameters = p;
+
+        var info = new TextView(this) { Text = details, TextSize = 14 };
+        info.SetTextColor(Color.ParseColor("#94A3B8"));
+        box.AddView(info);
+
+        layout.AddView(t1);
+        layout.AddView(t2);
+        layout.AddView(box);
+        return layout;
     }
 
     private View CreateHeaderView()
@@ -96,9 +150,13 @@ public class MainActivity : Activity
         joinBadge.Background = CreateRoundedDrawable("#2E1065", dp(10));
         joinBadge.SetPadding(dp(10), dp(4), dp(10), dp(4));
 
-        var teleIcon = new TextView(this) { Text = "✈", TextSize = 16 };
+        var teleIcon = new TextView(this) 
+        { 
+            Text = "✈", 
+            TextSize = 16,
+            Gravity = GravityFlags.Center // Fixed: Use property instead of method
+        };
         teleIcon.SetTextColor(Color.White);
-        teleIcon.SetGravity(GravityFlags.Center);
         teleIcon.Background = CreateRoundedDrawable("#3B82F6", dp(20));
         var iconP = new LinearLayout.LayoutParams(dp(40), dp(40));
         iconP.SetMargins(0, dp(8), 0, 0);
@@ -188,42 +246,45 @@ public class MainActivity : Activity
         nav.Background = CreateRoundedDrawable("#1E293B", dp(30));
         nav.SetGravity(GravityFlags.Center);
 
-        nav.AddView(CreateNavItem("🏠", "Home", false));
-        nav.AddView(CreateNavItem("📁", "Files", true));
-        nav.AddView(CreateNavItem("🔧", "Editor", false));
-        nav.AddView(CreateNavItem("⚙", "Settings", false));
+        nav.AddView(CreateNavItem("🏠", "Home", 0));
+        nav.AddView(CreateNavItem("📁", "Files", 1));
+        nav.AddView(CreateNavItem("🔧", "Editor", 2));
+        nav.AddView(CreateNavItem("⚙", "Settings", 3));
         return nav;
     }
 
-    private View CreateNavItem(string icon, string title, bool active)
+    private View CreateNavItem(string icon, string title, int targetIndex)
     {
         var item = new LinearLayout(this) { Orientation = Orientation.Vertical };
         item.SetGravity(GravityFlags.Center);
         var p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1);
         item.LayoutParameters = p;
 
-        if (active)
-        {
-            item.Background = CreateRoundedDrawable("#0284C7", dp(20));
-            item.SetPadding(dp(6), dp(6), dp(6), dp(6));
-        }
+        var i = new TextView(this) 
+        { 
+            Text = icon, 
+            TextSize = 16,
+            Gravity = GravityFlags.Center // Fixed: Use property instead of method
+        };
+        i.SetTextColor(targetIndex == 1 ? Color.White : Color.ParseColor("#64748B"));
 
-        var i = new TextView(this) { Text = icon, TextSize = 16 };
-        i.SetTextColor(active ? Color.White : Color.ParseColor("#64748B"));
-        i.SetGravity(GravityFlags.Center);
-
-        var t = new TextView(this) { Text = title, TextSize = 10 };
-        t.SetTextColor(active ? Color.White : Color.ParseColor("#64748B"));
-        t.SetGravity(GravityFlags.Center);
+        var t = new TextView(this) 
+        { 
+            Text = title, 
+            TextSize = 10,
+            Gravity = GravityFlags.Center // Fixed: Use property instead of method
+        };
+        t.SetTextColor(targetIndex == 1 ? Color.White : Color.ParseColor("#64748B"));
 
         item.AddView(i);
         item.AddView(t);
+
+        item.Click += (s, e) => SwitchScreen(targetIndex);
         return item;
     }
 
     private async void LoadConfigs()
     {
-        // Default sample data mimicking real screenshot
         var defaultList = new List<ConfigItem>
         {
             new ConfigItem
@@ -265,7 +326,6 @@ public class MainActivity : Activity
         card.LayoutParameters = cardParams;
         card.Background = CreateRoundedDrawable("#0E1626", dp(16), "#1E293B", 2);
 
-        // Preview Image Frame
         var imageFrame = new RelativeLayout(this);
         var frameParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, dp(180));
         imageFrame.LayoutParameters = frameParams;
@@ -276,7 +336,6 @@ public class MainActivity : Activity
         img.SetBackgroundColor(Color.ParseColor("#1E293B"));
         imageFrame.AddView(img);
 
-        // Load Remote Image Async
         if (!string.IsNullOrEmpty(item.ImageUrl))
         {
             Task.Run(async () =>
@@ -291,7 +350,6 @@ public class MainActivity : Activity
             });
         }
 
-        // Badges (e.g. 10 | BGMI ONLY)
         var badgeLayout = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         var bParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
         bParams.AddRule(LayoutRules.AlignParentBottom);
@@ -316,7 +374,6 @@ public class MainActivity : Activity
         imageFrame.AddView(badgeLayout);
         card.AddView(imageFrame);
 
-        // Details Body
         var body = new LinearLayout(this) { Orientation = Orientation.Vertical };
         body.SetPadding(dp(14), dp(14), dp(14), dp(14));
 
@@ -331,7 +388,6 @@ public class MainActivity : Activity
         desc.LayoutParameters = dpParams;
         body.AddView(desc);
 
-        // Action Button (DOWNLOAD -> APPLY)
         var btn = new Button(this)
         {
             Text = "▶  DOWNLOAD & APPLY",
@@ -373,7 +429,7 @@ public class MainActivity : Activity
             {
                 btn.Text = "APPLYING...";
                 btn.Enabled = false;
-                ShizukuService.ApplyConfig(localPath, PackageName, item.TargetSubpath, item.FileName);
+                ShizukuService.ApplyConfig(localPath, TargetGamePackage, item.TargetSubpath, item.FileName);
                 btn.Text = "APPLIED SUCCESSFULLY";
                 btn.Background = CreateRoundedDrawable("#6366F1", dp(12));
             }
@@ -396,5 +452,5 @@ public class MainActivity : Activity
         return drawable;
     }
 
-    private int dp(int pixels) => (int)(pixels * Resources?.DisplayMetrics?.Density ?? 1);
+    private int dp(int pixels) => (int)(pixels * (Resources?.DisplayMetrics?.Density ?? 1));
 }
