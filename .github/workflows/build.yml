@@ -45,9 +45,9 @@ jobs:
         run: |
           dotnet workload install android --source https://api.nuget.org/v3/index.json
 
-      - name: Auto-Generate Project Structure & Fix Paths
+      - name: Auto-Generate Project Structure & Fixed C# Sources
         run: |
-          # 1. Project file explicitly referencing AndroidManifest.xml
+          # 1. Project definition
           cat << 'EOF' > GfxTool.csproj
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
@@ -69,7 +69,7 @@ jobs:
           </Project>
           EOF
 
-          # 2. Manifest content with Shizuku & Full Storage declarations
+          # 2. Android Manifest
           MANIFEST_CONTENT='<?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.kuronami.gfxtool">
               <uses-permission android:name="android.permission.INTERNET" />
@@ -81,7 +81,6 @@ jobs:
               </application>
           </manifest>'
 
-          # Place manifest at root AND Properties folder (guarantees MSBuild finds it)
           echo "$MANIFEST_CONTENT" > AndroidManifest.xml
           mkdir -p Properties
           echo "$MANIFEST_CONTENT" > Properties/AndroidManifest.xml
@@ -117,7 +116,6 @@ jobs:
 
           # 4. Privileged Shizuku Command Execution
           cat << 'EOF' > ShizukuService.cs
-          using System;
           using System.Diagnostics;
 
           namespace KuronamiGfx;
@@ -155,15 +153,13 @@ jobs:
           }
           EOF
 
-          # 5. UI Activity with Download to Apply State Switch
+          # 5. Fixed MainActivity with explicitly qualified namespaces
           cat << 'EOF' > MainActivity.cs
-          using System;
-          using System.IO;
-          using System.Net.Http;
           using Android.App;
           using Android.OS;
           using Android.Widget;
           using Android.Graphics;
+          using System.Net.Http;
 
           namespace KuronamiGfx;
 
@@ -222,7 +218,10 @@ jobs:
 
                   btn.Click += async (s, e) =>
                   {
-                      string localPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), item.FileName);
+                      // Disambiguated System.IO.Path and System.Environment
+                      string appDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal);
+                      string localPath = System.IO.Path.Combine(appDir, item.FileName);
+
                       if (!item.IsDownloaded)
                       {
                           btn.Text = "DOWNLOADING...";
@@ -230,7 +229,7 @@ jobs:
                           try
                           {
                               var data = await _http.GetByteArrayAsync(item.FileUrl);
-                              await File.WriteAllBytesAsync(localPath, data);
+                              await System.IO.File.WriteAllBytesAsync(localPath, data);
                               item.IsDownloaded = true;
                               btn.Text = "APPLY";
                               btn.SetBackgroundColor(Color.ParseColor("#10B981"));
@@ -266,7 +265,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff-index --quiet HEAD; then
-            git commit -m "Auto-fix manifest locations and build structure"
+            git commit -m "Fix namespace ambiguity for Path and Environment"
             git push origin HEAD
           else
             echo "Working directory clean."
