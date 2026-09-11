@@ -1,11 +1,10 @@
+using System;
+using System.IO;
+using System.Net.Http;
 using Android.App;
 using Android.OS;
 using Android.Widget;
-using Android.Views;
 using Android.Graphics;
-using System.IO;
-using System.Net.Http;
-using System.Text.Json;
 
 namespace KuronamiGfx;
 
@@ -38,25 +37,14 @@ public class MainActivity : Activity
         title.SetTextColor(Color.ParseColor("#00E5FF"));
         _container.AddView(title);
 
-        LoadData();
-    }
-
-    private async void LoadData()
-    {
-        try
+        RenderCard(new ConfigItem
         {
-            // Example demo data loader
-            var demoItem = new ConfigItem
-            {
-                Id = "1",
-                Title = "BGMI Smooth 90 FPS",
-                FileName = "Active.sav",
-                TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
-                FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
-            };
-            RenderCard(demoItem);
-        }
-        catch { }
+            Id = "1",
+            Title = "BGMI LUA PAK V1",
+            FileName = "Active.sav",
+            TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
+            FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
+        });
     }
 
     private void RenderCard(ConfigItem item)
@@ -75,17 +63,27 @@ public class MainActivity : Activity
 
         btn.Click += async (s, e) =>
         {
-            string localPath = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal), item.FileName);
+            string localPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), item.FileName);
             if (!item.IsDownloaded)
             {
                 btn.Text = "DOWNLOADING...";
                 btn.Enabled = false;
-                var data = await _http.GetByteArrayAsync(item.FileUrl);
-                await File.WriteAllBytesAsync(localPath, data);
-                item.IsDownloaded = true;
-                btn.Text = "APPLY";
-                btn.SetBackgroundColor(Color.ParseColor("#10B981"));
-                btn.Enabled = true;
+                try
+                {
+                    var data = await _http.GetByteArrayAsync(item.FileUrl);
+                    await File.WriteAllBytesAsync(localPath, data);
+                    item.IsDownloaded = true;
+                    btn.Text = "APPLY";
+                    btn.SetBackgroundColor(Color.ParseColor("#10B981"));
+                }
+                catch
+                {
+                    btn.Text = "DOWNLOAD FAILED";
+                }
+                finally
+                {
+                    btn.Enabled = true;
+                }
             }
             else
             {
@@ -93,6 +91,7 @@ public class MainActivity : Activity
                 btn.Enabled = false;
                 ShizukuService.ApplyConfig(localPath, "com.pubg.imobile", item.TargetSubpath, item.FileName);
                 btn.Text = "APPLIED";
+                btn.SetBackgroundColor(Color.ParseColor("#6366F1"));
             }
         };
 
