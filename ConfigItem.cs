@@ -10,6 +10,18 @@ public class ConfigItem
     [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
 
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("image_url")]
+    public string ImageUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("badge_text")]
+    public string BadgeText { get; set; } = "BGMI ONLY";
+
+    [JsonPropertyName("badge_num")]
+    public string BadgeNum { get; set; } = "10";
+
     [JsonPropertyName("file_url")]
     public string FileUrl { get; set; } = string.Empty;
 
