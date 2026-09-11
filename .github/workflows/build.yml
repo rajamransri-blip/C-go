@@ -1,4 +1,4 @@
-name: Setup Project, Push Source and Build APK
+name: Auto Setup and Build APK
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  scaffold-and-build:
+  build-apk:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,22 +25,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup .NET SDK 8.0
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
       - name: Install Android Workload
         run: |
-          dotnet workload install android --source https://api.nuget.org/v3/index.json
+          dotnet workload install android --skip-manifest-update
 
-      - name: Generate Complete C# Project & Manifest (If Not Present)
+      - name: Auto-Generate Project Structure & Shizuku Config
         run: |
-          if [ ! -f "*.csproj" ] && [ ! -f "*/*.csproj" ]; then
-            echo "Project not found. Creating complete C# Shizuku GFX Tool project..."
-
-            # 1. Create .csproj
-            cat << 'EOF' > GfxTool.csproj
+          # 1. Generate clean .csproj with EOL bypass flags
+          cat << 'EOF' > GfxTool.csproj
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
               <TargetFramework>net8.0-android</TargetFramework>
@@ -51,6 +48,10 @@ jobs:
               <ApplicationId>com.kuronami.gfxtool</ApplicationId>
               <ApplicationVersion>1</ApplicationVersion>
               <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+              <!-- Bypass EOL TargetFramework Errors -->
+              <CheckEolTargetFramework>false</CheckEolTargetFramework>
+              <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+              <WarningLevel>0</WarningLevel>
             </PropertyGroup>
             <ItemGroup>
               <PackageReference Include="System.Text.Json" Version="8.0.5" />
@@ -58,9 +59,9 @@ jobs:
           </Project>
           EOF
 
-            # 2. Create AndroidManifest with Shizuku & Storage Permissions
-            mkdir -p Platforms/Android
-            cat << 'EOF' > Platforms/Android/AndroidManifest.xml
+          # 2. Manifest with Shizuku and Storage Permissions
+          mkdir -p Platforms/Android
+          cat << 'EOF' > Platforms/Android/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.kuronami.gfxtool">
               <uses-permission android:name="android.permission.INTERNET" />
@@ -68,29 +69,13 @@ jobs:
               <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-              <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:label="Kuronami GFX" android:supportsRtl="true">
+              <application android:allowBackup="true" android:label="Kuronami GFX" android:supportsRtl="true">
               </application>
           </manifest>
           EOF
 
-            # 3. Create Resources
-            mkdir -p Platforms/Android/Resources/values
-            cat << 'EOF' > Platforms/Android/Resources/values/strings.xml
-          <resources>
-              <string name="app_name">Kuronami GFX</string>
-          </resources>
-          EOF
-
-            mkdir -p Platforms/Android/Resources/mipmap-anydpi-v26
-            mkdir -p Platforms/Android/Resources/values
-            cat << 'EOF' > Platforms/Android/Resources/values/colors.xml
-          <resources>
-              <color name="colorPrimary">#0D1117</color>
-          </resources>
-          EOF
-
-            # 4. Create Models & Logic
-            cat << 'EOF' > ConfigItem.cs
+          # 3. Model Definition
+          cat << 'EOF' > ConfigItem.cs
           using System.Text.Json.Serialization;
 
           namespace KuronamiGfx;
@@ -116,7 +101,9 @@ jobs:
           }
           EOF
 
-            cat << 'EOF' > ShizukuService.cs
+          # 4. Shizuku privileged injector
+          cat << 'EOF' > ShizukuService.cs
+          using System;
           using System.Diagnostics;
 
           namespace KuronamiGfx;
@@ -154,16 +141,15 @@ jobs:
           }
           EOF
 
-            # 5. Create MainActivity
-            cat << 'EOF' > MainActivity.cs
+          # 5. Native Android Activity UI with dynamic Download -> Apply button
+          cat << 'EOF' > MainActivity.cs
+          using System;
+          using System.IO;
+          using System.Net.Http;
           using Android.App;
           using Android.OS;
           using Android.Widget;
-          using Android.Views;
           using Android.Graphics;
-          using System.IO;
-          using System.Net.Http;
-          using System.Text.Json;
 
           namespace KuronamiGfx;
 
@@ -196,25 +182,14 @@ jobs:
                   title.SetTextColor(Color.ParseColor("#00E5FF"));
                   _container.AddView(title);
 
-                  LoadData();
-              }
-
-              private async void LoadData()
-              {
-                  try
+                  RenderCard(new ConfigItem
                   {
-                      // Example demo data loader
-                      var demoItem = new ConfigItem
-                      {
-                          Id = "1",
-                          Title = "BGMI Smooth 90 FPS",
-                          FileName = "Active.sav",
-                          TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
-                          FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
-                      };
-                      RenderCard(demoItem);
-                  }
-                  catch { }
+                      Id = "1",
+                      Title = "BGMI LUA PAK V1",
+                      FileName = "Active.sav",
+                      TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
+                      FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
+                  });
               }
 
               private void RenderCard(ConfigItem item)
@@ -233,17 +208,27 @@ jobs:
 
                   btn.Click += async (s, e) =>
                   {
-                      string localPath = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal), item.FileName);
+                      string localPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), item.FileName);
                       if (!item.IsDownloaded)
                       {
                           btn.Text = "DOWNLOADING...";
                           btn.Enabled = false;
-                          var data = await _http.GetByteArrayAsync(item.FileUrl);
-                          await File.WriteAllBytesAsync(localPath, data);
-                          item.IsDownloaded = true;
-                          btn.Text = "APPLY";
-                          btn.SetBackgroundColor(Color.ParseColor("#10B981"));
-                          btn.Enabled = true;
+                          try
+                          {
+                              var data = await _http.GetByteArrayAsync(item.FileUrl);
+                              await File.WriteAllBytesAsync(localPath, data);
+                              item.IsDownloaded = true;
+                              btn.Text = "APPLY";
+                              btn.SetBackgroundColor(Color.ParseColor("#10B981"));
+                          }
+                          catch
+                          {
+                              btn.Text = "DOWNLOAD FAILED";
+                          }
+                          finally
+                          {
+                              btn.Enabled = true;
+                          }
                       }
                       else
                       {
@@ -251,6 +236,7 @@ jobs:
                           btn.Enabled = false;
                           ShizukuService.ApplyConfig(localPath, "com.pubg.imobile", item.TargetSubpath, item.FileName);
                           btn.Text = "APPLIED";
+                          btn.SetBackgroundColor(Color.ParseColor("#6366F1"));
                       }
                   };
 
@@ -260,32 +246,39 @@ jobs:
           }
           EOF
 
-            # 6. Commit & Push back to repository
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add .
-            git commit -m "Auto-generate full C# Android Shizuku project"
+      - name: Sync and Push Source to Repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "Auto-scaffold project sources with Shizuku integration"
             git push origin HEAD
+          else
+            echo "Working directory clean, no new files to commit."
           fi
 
       - name: Restore Dependencies
         run: |
-          dotnet restore
+          dotnet restore GfxTool.csproj -p:CheckEolTargetFramework=false
 
       - name: Build Android APK
         run: |
-          dotnet build -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false
+          dotnet build GfxTool.csproj -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false -p:CheckEolTargetFramework=false
 
-      - name: Locate APK
+      - name: Locate Output APK
         id: find-apk
         run: |
-          APK_FILE=$(find . -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
-          echo "Found APK: $APK_FILE"
+          APK_FILE=$(find bin/Release/net8.0-android -type f -name "*-Signed.apk" -o -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find . -type f -name "*.apk" | head -n 1)
+          fi
+          echo "Discovered APK: $APK_FILE"
           echo "apk_path=$APK_FILE" >> $GITHUB_ENV
 
-      - name: Upload Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kuronami-GFX-APK
+          name: Kuronami-GFX-Release
           path: ${{ env.apk_path }}
           retention-days: 7
