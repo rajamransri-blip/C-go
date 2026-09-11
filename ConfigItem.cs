@@ -29,7 +29,7 @@ public class ConfigItem
     public string FileName { get; set; } = string.Empty;
 
     [JsonPropertyName("target_subpath")]
-    public string TargetSubpath { get; set; } = string.Empty;
+    public string TargetSubpath { get; set; } = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks";
 
     public bool IsDownloaded { get; set; }
 }

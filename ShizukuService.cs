@@ -1,10 +1,11 @@
+using System;
 using System.Diagnostics;
 
 namespace KuronamiGfx;
 
 public static class ShizukuService
 {
-    public static void ExecuteShizuku(string command)
+    public static bool CheckShizukuActive()
     {
         try
         {
@@ -13,23 +14,55 @@ public static class ShizukuService
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "/system/bin/sh",
-                    Arguments = $"-c \"/data/local/tmp/rish -c '{command}'\"",
+                    Arguments = "-c \"/data/local/tmp/rish -c 'id'\"",
                     UseShellExecute = false,
-                    RedirectStandardOutput = true
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
                 }
             };
             proc.Start();
+            string output = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit();
+            return output.Contains("uid=2000") || output.Contains("root") || output.Contains("shell");
         }
-        catch { }
+        catch
+        {
+            return false;
+        }
     }
 
-    public static void ApplyConfig(string localPath, string packageName, string targetSubpath, string fileName)
+    public static bool ApplyConfigToPaks(string localPath, string packageName, string targetSubpath, string fileName)
     {
-        string destDir = $"/sdcard/Android/data/{packageName}/{targetSubpath}";
-        string destFile = $"{destDir}/{fileName}";
-        ExecuteShizuku($"mkdir -p '{destDir}'");
-        ExecuteShizuku($"cp '{localPath}' '{destFile}'");
-        ExecuteShizuku($"chmod 660 '{destFile}'");
+        try
+        {
+            string destDir = $"/sdcard/Android/data/{packageName}/{targetSubpath}";
+            string destFile = $"{destDir}/{fileName}";
+
+            ExecuteShizuku($"mkdir -p '{destDir}'");
+            ExecuteShizuku($"cp '{localPath}' '{destFile}'");
+            ExecuteShizuku($"chmod 660 '{destFile}'");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ExecuteShizuku(string command)
+    {
+        var proc = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "/system/bin/sh",
+                Arguments = $"-c \"/data/local/tmp/rish -c '{command}'\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            }
+        };
+        proc.Start();
+        proc.WaitForExit();
     }
 }
