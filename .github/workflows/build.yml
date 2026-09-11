@@ -25,22 +25,34 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup .NET SDK 9.0
+      # 1. Force runner to strictly use .NET 8 SDK via global.json
+      - name: Create global.json (Pin SDK)
+        run: |
+          cat << 'EOF' > global.json
+          {
+            "sdk": {
+              "version": "8.0.404",
+              "rollForward": "latestMinor"
+            }
+          }
+          EOF
+
+      - name: Setup .NET SDK 8.0
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '8.0.404'
 
       - name: Install Android Workload
         run: |
-          dotnet workload install android --skip-manifest-update
+          dotnet workload install android --source https://api.nuget.org/v3/index.json
 
-      - name: Auto-Generate Project Structure & Shizuku Config
+      - name: Auto-Generate Project Structure
         run: |
-          # 1. Project file with exact target framework and bypasses
+          # 1. C# Project targeting net8.0-android
           cat << 'EOF' > GfxTool.csproj
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
-              <TargetFramework>net9.0-android</TargetFramework>
+              <TargetFramework>net8.0-android</TargetFramework>
               <SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
               <OutputType>Exe</OutputType>
               <Nullable>enable</Nullable>
@@ -50,15 +62,14 @@ jobs:
               <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
               <CheckEolWorkloads>false</CheckEolWorkloads>
               <CheckEolTargetFramework>false</CheckEolTargetFramework>
-              <NoWarn>$(NoWarn);NETSDK1202;NETSDK1138</NoWarn>
             </PropertyGroup>
             <ItemGroup>
-              <PackageReference Include="System.Text.Json" Version="9.0.0" />
+              <PackageReference Include="System.Text.Json" Version="8.0.5" />
             </ItemGroup>
           </Project>
           EOF
 
-          # 2. Android Manifest with Shizuku & Full Storage declarations
+          # 2. Android Manifest with Permissions
           mkdir -p Platforms/Android
           cat << 'EOF' > Platforms/Android/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -100,7 +111,7 @@ jobs:
           }
           EOF
 
-          # 4. Privileged Shizuku Command Execution
+          # 4. Shizuku Shell Execution
           cat << 'EOF' > ShizukuService.cs
           using System;
           using System.Diagnostics;
@@ -140,7 +151,7 @@ jobs:
           }
           EOF
 
-          # 5. Native Android UI with Dynamic State Switch
+          # 5. UI Activity
           cat << 'EOF' > MainActivity.cs
           using System;
           using System.IO;
@@ -184,7 +195,7 @@ jobs:
                   RenderCard(new ConfigItem
                   {
                       Id = "1",
-                      Title = "BGMI LUA PAK V1",
+                      Title = "Optimal Graphics Profile",
                       FileName = "Active.sav",
                       TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
                       FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
@@ -251,19 +262,15 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff-index --quiet HEAD; then
-            git commit -m "Auto-scaffold project sources with Shizuku integration"
+            git commit -m "Configure stable SDK pin and project scaffolding"
             git push origin HEAD
           else
             echo "No changes to commit"
           fi
 
-      - name: Restore Dependencies
-        run: |
-          dotnet restore GfxTool.csproj -p:CheckEolWorkloads=false -p:CheckEolTargetFramework=false
-
       - name: Build Android APK
         run: |
-          dotnet build GfxTool.csproj -c Release -f net9.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false -p:CheckEolWorkloads=false -p:CheckEolTargetFramework=false
+          dotnet build GfxTool.csproj -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidKeyStore=false
 
       - name: Locate Output APK
         id: find-apk
