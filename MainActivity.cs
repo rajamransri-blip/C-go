@@ -1,10 +1,8 @@
-using System;
-using System.IO;
-using System.Net.Http;
 using Android.App;
 using Android.OS;
 using Android.Widget;
 using Android.Graphics;
+using System.Net.Http;
 
 namespace KuronamiGfx;
 
@@ -63,7 +61,10 @@ public class MainActivity : Activity
 
         btn.Click += async (s, e) =>
         {
-            string localPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), item.FileName);
+            // Disambiguated System.IO.Path and System.Environment
+            string appDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal);
+            string localPath = System.IO.Path.Combine(appDir, item.FileName);
+
             if (!item.IsDownloaded)
             {
                 btn.Text = "DOWNLOADING...";
@@ -71,7 +72,7 @@ public class MainActivity : Activity
                 try
                 {
                     var data = await _http.GetByteArrayAsync(item.FileUrl);
-                    await File.WriteAllBytesAsync(localPath, data);
+                    await System.IO.File.WriteAllBytesAsync(localPath, data);
                     item.IsDownloaded = true;
                     btn.Text = "APPLY";
                     btn.SetBackgroundColor(Color.ParseColor("#10B981"));
