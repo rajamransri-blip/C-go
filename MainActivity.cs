@@ -40,7 +40,7 @@ public class MainActivity : Activity
         RenderCard(new ConfigItem
         {
             Id = "1",
-            Title = "BGMI LUA PAK V1",
+            Title = "Optimal Graphics Profile",
             FileName = "Active.sav",
             TargetSubpath = "files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/SaveGames",
             FileUrl = "https://raw.githubusercontent.com/actions/starter-workflows/main/README.md"
